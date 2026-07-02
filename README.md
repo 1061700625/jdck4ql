@@ -20,6 +20,10 @@
 
 * 支持短信验证码自动识别
 
+## 下载
+
+https://github.com/1061700625/jdck4ql/releases
+
 ## 界面展示
 
 ![](doc/gui.jpg)
