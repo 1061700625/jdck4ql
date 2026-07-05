@@ -5,6 +5,7 @@
     <string name="input_btn_text">输入</string>
     <string name="get_cookie_btn_text">获取CK</string>
     <string name="check_cookie_btn_text">检测CK</string>
+    <string name="bean_check_btn_text">检测豆子</string>
     <string name="clear_cookie_btn_text">重置</string>
     <string name="confirm_btn_text">添加</string>
     <string name="account_hint">用户名/手机号</string>

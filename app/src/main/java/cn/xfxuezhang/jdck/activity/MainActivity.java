@@ -3,15 +3,18 @@ package cn.xfxuezhang.jdck.activity;
 import android.app.AlertDialog;
 import android.content.*;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.provider.Settings;
+import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.webkit.*;
 import android.widget.*;
 import androidx.appcompat.app.AppCompatActivity;
@@ -40,7 +43,7 @@ public class MainActivity extends AppCompatActivity {
 
     private Context context;
 
-    private Button addBtn, delBtn, inputBtn, getCookieBtn, checkCookieBtn, clearCookieBtn;
+    private Button addBtn, delBtn, inputBtn, getCookieBtn, checkCookieBtn, beanCheckBtn, clearCookieBtn;
 
     private Spinner phoneSpinner;
 
@@ -308,6 +311,9 @@ public class MainActivity extends AppCompatActivity {
         // 检测青龙面板中的JD_COOKIE
         checkCookieBtn = findViewById(R.id.checkCookieBtn);
         checkCookieBtn.setOnClickListener(v -> checkQlCookies());
+        // 豆子检测按钮
+        beanCheckBtn = findViewById(R.id.beanCheckBtn);
+        beanCheckBtn.setOnClickListener(v -> checkQlBeans());
         // 重置cookie刷新页面按钮
         clearCookieBtn = findViewById(R.id.clearCookieBtn);
         clearCookieBtn.setOnClickListener(v -> {
@@ -367,9 +373,9 @@ public class MainActivity extends AppCompatActivity {
             } break;
             case 3: {
                 AlertDialog.Builder builder = new AlertDialog.Builder(context);
-                builder.setMessage("@XanderYe 版权所有 @yclown修改");
+                builder.setMessage("本软件仅供学习参考所用，不得挪用他途，请于下载后24小时内删除。谢谢合作！\nhttps://github.com/1061700625/jdck4ql");
                 builder.setPositiveButton("项目页面", (dialog, which) -> {
-                    Uri uri = Uri.parse("https://github.com/yclown/jdck-android");
+                    Uri uri = Uri.parse("https://github.com/1061700625/jdck4ql");
                     Intent intent = new Intent();
                     intent.setAction("android.intent.action.VIEW");
                     intent.setData(uri);
@@ -477,6 +483,9 @@ public class MainActivity extends AppCompatActivity {
             public View getView(int position, View convertView, android.view.ViewGroup parent) {
                 TextView view = (TextView) super.getView(position, convertView, parent);
                 view.setText(getAccountName(getItem(position)));
+                // Spinner 是白底，把文字统一改成黑色
+                view.setTextColor(Color.parseColor("#212121"));
+                view.setTextSize(15);
                 return view;
             }
 
@@ -484,6 +493,7 @@ public class MainActivity extends AppCompatActivity {
             public View getDropDownView(int position, View convertView, android.view.ViewGroup parent) {
                 TextView view = (TextView) super.getDropDownView(position, convertView, parent);
                 view.setText(getAccountName(getItem(position)));
+                view.setTextColor(Color.parseColor("#212121"));
                 return view;
             }
         };
@@ -588,6 +598,7 @@ public class MainActivity extends AppCompatActivity {
         singleThreadExecutor.execute(() -> {
             try {
                 List<QlEnv> qlEnvList = QinglongUtil.getEnvList(qlInfo, "JD_COOKIE");
+                Config.getInstance().setQlEnvList(qlEnvList);
                 List<QlEnv> cookieEnvList = qlEnvList.stream()
                         .filter(env -> "JD_COOKIE".equals(env.getName()))
                         .filter(env -> StringUtils.isNotBlank(env.getValue()))
@@ -599,7 +610,12 @@ public class MainActivity extends AppCompatActivity {
 
                 List<JDUtil.CheckResult> results = new ArrayList<>();
                 for (QlEnv qlEnv : cookieEnvList) {
-                    results.add(JDUtil.checkCookie(qlEnv.getValue()));
+                    JDUtil.CheckResult result = JDUtil.checkCookie(qlEnv.getValue());
+                    // 若青龙 remarks 里存了手机号/备注，用它替代 pt_pin 展示更直观
+                    if (StringUtils.isNotBlank(qlEnv.getRemarks())) {
+                        result = new JDUtil.CheckResult(result.getStatus(), qlEnv.getRemarks(), result.getNickname(), result.getMessage());
+                    }
+                    results.add(result);
                 }
                 runOnUiThread(() -> showCookieCheckResult(results));
             } catch (IOException e) {
@@ -609,40 +625,200 @@ public class MainActivity extends AppCompatActivity {
         singleThreadExecutor.shutdown();
     }
 
+    /**
+     * 豆子检测：读取青龙 JD_COOKIE 环境变量，逐个统计京豆信息
+     * 参考 jd_bean_info.js 的实现：
+     *  - 通过 GetJDUserInfoUnion 拿到 nickname 与当前总京豆
+     *  - 通过 getJingBeanBalanceDetail 分页拉京豆流水，统计今日/昨日收支
+     */
+    private void checkQlBeans() {
+        QlInfo qlInfo = Config.getInstance().getQlInfo();
+        if (qlInfo == null || StringUtils.isBlank(qlInfo.getToken())) {
+            Toast.makeText(this, "请先登录青龙面板", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Toast.makeText(this, "开始豆子检测（可能需要几秒）", Toast.LENGTH_SHORT).show();
+        ExecutorService singleThreadExecutor = Executors.newSingleThreadExecutor();
+        singleThreadExecutor.execute(() -> {
+            try {
+                List<QlEnv> qlEnvList = QinglongUtil.getEnvList(qlInfo, "JD_COOKIE");
+                Config.getInstance().setQlEnvList(qlEnvList);
+                List<QlEnv> cookieEnvList = qlEnvList.stream()
+                        .filter(env -> "JD_COOKIE".equals(env.getName()))
+                        .filter(env -> StringUtils.isNotBlank(env.getValue()))
+                        .collect(Collectors.toList());
+                if (cookieEnvList.isEmpty()) {
+                    runOnUiThread(() -> Toast.makeText(this, "青龙中未找到JD_COOKIE", Toast.LENGTH_SHORT).show());
+                    return;
+                }
+
+                List<JDUtil.BeanResult> results = new ArrayList<>();
+                int idx = 0;
+                for (QlEnv qlEnv : cookieEnvList) {
+                    idx++;
+                    JDUtil.BeanResult r = JDUtil.checkBean(qlEnv.getValue());
+                    r.setIndex(idx);
+                    if (StringUtils.isNotBlank(qlEnv.getRemarks())) {
+                        r.setRemarks(qlEnv.getRemarks());
+                    }
+                    results.add(r);
+                }
+                runOnUiThread(() -> showBeanCheckResult(results));
+            } catch (IOException e) {
+                runOnUiThread(() -> Toast.makeText(this, e.getMessage(), Toast.LENGTH_SHORT).show());
+            }
+        });
+        singleThreadExecutor.shutdown();
+    }
+
+    private void showBeanCheckResult(List<JDUtil.BeanResult> results) {
+        int total = 0;
+        int validCount = 0;
+        int invalidCount = 0;
+        for (JDUtil.BeanResult r : results) {
+            if (r.isLogin()) {
+                validCount++;
+                total += r.getTodayIncomeBean();
+            } else {
+                invalidCount++;
+            }
+        }
+
+        LayoutInflater inflater = LayoutInflater.from(context);
+        View dialogView = inflater.inflate(R.layout.dialog_check_result, null);
+        TextView titleView = dialogView.findViewById(R.id.dialogTitle);
+        TextView summaryView = dialogView.findViewById(R.id.dialogSummary);
+        LinearLayout content = dialogView.findViewById(R.id.dialogContent);
+        View headerView = dialogView.findViewById(R.id.dialogHeader);
+        if (headerView != null) {
+            headerView.setBackgroundColor(Color.parseColor("#FB8C00")); // 豆子橙
+        }
+        titleView.setText("豆子检测结果");
+        summaryView.setText(MessageFormat.format(
+                "共 {0} 个账号 · 有效 {1} · 失效 {2} · 今日总收入 {3} 京豆 🐶",
+                results.size(), validCount, invalidCount, total));
+
+        for (JDUtil.BeanResult r : results) {
+            View item = inflater.inflate(R.layout.item_check_result, content, false);
+            TextView icon = item.findViewById(R.id.itemStatusIcon);
+            TextView title = item.findViewById(R.id.itemTitle);
+            TextView subtitle = item.findViewById(R.id.itemSubtitle);
+
+            String who = StringUtils.isNotBlank(r.getRemarks()) ? r.getRemarks() : r.getPin();
+            if (StringUtils.isBlank(who)) {
+                who = "账号" + r.getIndex();
+            }
+
+            if (!r.isLogin()) {
+                icon.setText("×");
+                icon.setBackgroundResource(R.drawable.bg_status_invalid);
+                title.setText("账号 " + r.getIndex() + " · " + who);
+                title.setTextColor(Color.parseColor("#D32F2F"));
+                String msg = StringUtils.isNotBlank(r.getMessage()) ? r.getMessage() : "Cookie 已失效";
+                subtitle.setText(msg);
+            } else {
+                icon.setText("√");
+                icon.setBackgroundResource(R.drawable.bg_status_valid);
+                StringBuilder t = new StringBuilder();
+                t.append("账号 ").append(r.getIndex()).append(" · ").append(who);
+                if (StringUtils.isNotBlank(r.getNickname())) {
+                    t.append("（").append(r.getNickname()).append("）");
+                }
+                title.setText(t.toString());
+                title.setTextColor(Color.parseColor("#212121"));
+
+                StringBuilder s = new StringBuilder();
+                s.append("当前京豆：").append(r.getBeanCount()).append("\n");
+                s.append("今日收入：").append(r.getTodayIncomeBean()).append("\n");
+                s.append("昨日收入：").append(r.getYesterdayIncomeBean())
+                        .append("   昨日支出：").append(r.getYesterdayExpenseBean());
+                subtitle.setText(s.toString());
+            }
+            content.addView(item);
+        }
+
+        new AlertDialog.Builder(context)
+                .setView(dialogView)
+                .setPositiveButton("确定", null)
+                .show();
+    }
+
     private void showCookieCheckResult(List<JDUtil.CheckResult> results) {
         int validCount = 0;
         int invalidCount = 0;
         int unknownCount = 0;
-        StringBuilder detail = new StringBuilder();
         for (JDUtil.CheckResult result : results) {
             switch (result.getStatus()) {
                 case VALID:
                     validCount++;
-                    detail.append("有效：");
                     break;
                 case INVALID:
                     invalidCount++;
-                    detail.append("失效：");
                     break;
                 default:
                     unknownCount++;
-                    detail.append("未知：");
                     break;
             }
-            detail.append(result.getPin());
-            if (StringUtils.isNotBlank(result.getNickname())) {
-                detail.append("（").append(result.getNickname()).append("）");
-            }
-            if (StringUtils.isNotBlank(result.getMessage())) {
-                detail.append(" - ").append(result.getMessage());
-            }
-            detail.append("\n");
         }
-        String message = MessageFormat.format("共{0}个，有效{1}个，失效{2}个，未知{3}个\n\n{4}",
-                results.size(), validCount, invalidCount, unknownCount, detail.toString());
+
+        LayoutInflater inflater = LayoutInflater.from(context);
+        View dialogView = inflater.inflate(R.layout.dialog_check_result, null);
+        TextView titleView = dialogView.findViewById(R.id.dialogTitle);
+        TextView summaryView = dialogView.findViewById(R.id.dialogSummary);
+        LinearLayout content = dialogView.findViewById(R.id.dialogContent);
+        View headerView = dialogView.findViewById(R.id.dialogHeader);
+        if (headerView != null) {
+            headerView.setBackgroundColor(Color.parseColor("#5E35B1")); // 检测CK紫
+        }
+        titleView.setText("CK 检测结果");
+        summaryView.setText(MessageFormat.format(
+                "共 {0} 个 · 有效 {1} · 失效 {2} · 未知 {3}",
+                results.size(), validCount, invalidCount, unknownCount));
+
+        int idx = 0;
+        for (JDUtil.CheckResult result : results) {
+            idx++;
+            View item = inflater.inflate(R.layout.item_check_result, content, false);
+            TextView icon = item.findViewById(R.id.itemStatusIcon);
+            TextView title = item.findViewById(R.id.itemTitle);
+            TextView subtitle = item.findViewById(R.id.itemSubtitle);
+
+            String pin = StringUtils.isNotBlank(result.getPin()) ? result.getPin() : ("账号" + idx);
+            StringBuilder t = new StringBuilder();
+            t.append("账号 ").append(idx).append(" · ").append(pin);
+            if (StringUtils.isNotBlank(result.getNickname())) {
+                t.append("（").append(result.getNickname()).append("）");
+            }
+            title.setText(t.toString());
+
+            switch (result.getStatus()) {
+                case VALID:
+                    icon.setText("√");
+                    icon.setBackgroundResource(R.drawable.bg_status_valid);
+                    title.setTextColor(Color.parseColor("#2E7D32"));
+                    subtitle.setText(StringUtils.isNotBlank(result.getMessage())
+                            ? result.getMessage() : "Cookie 有效");
+                    break;
+                case INVALID:
+                    icon.setText("×");
+                    icon.setBackgroundResource(R.drawable.bg_status_invalid);
+                    title.setTextColor(Color.parseColor("#D32F2F"));
+                    subtitle.setText(StringUtils.isNotBlank(result.getMessage())
+                            ? result.getMessage() : "Cookie 已失效");
+                    break;
+                default:
+                    icon.setText("?");
+                    icon.setBackgroundResource(R.drawable.bg_status_unknown);
+                    title.setTextColor(Color.parseColor("#F57C00"));
+                    subtitle.setText(StringUtils.isNotBlank(result.getMessage())
+                            ? result.getMessage() : "状态未知");
+                    break;
+            }
+            content.addView(item);
+        }
+
         new AlertDialog.Builder(context)
-                .setTitle("CK检测结果")
-                .setMessage(message)
+                .setView(dialogView)
                 .setPositiveButton("确定", null)
                 .show();
     }

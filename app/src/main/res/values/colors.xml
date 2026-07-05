@@ -7,4 +7,19 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- 品牌主色 & 按钮语义色 -->
+    <color name="brand_primary">#E1251B</color>       <!-- 京东红 -->
+    <color name="brand_primary_dark">#B71C15</color>
+    <color name="btn_add">#43A047</color>              <!-- 添加：绿色 -->
+    <color name="btn_delete">#E53935</color>           <!-- 删除：红色 -->
+    <color name="btn_input">#1E88E5</color>            <!-- 输入：蓝色 -->
+    <color name="btn_get_ck">#00897B</color>           <!-- 获取CK：青绿 -->
+    <color name="btn_check_ck">#5E35B1</color>         <!-- 检测CK：紫色 -->
+    <color name="btn_bean">#FB8C00</color>             <!-- 豆子检测：橙色 -->
+    <color name="btn_reset">#757575</color>            <!-- 重置：灰色 -->
+
+    <color name="page_bg">#F5F6F8</color>
+    <color name="spinner_bg">#FFFFFF</color>
+    <color name="spinner_stroke">#DADCE0</color>
 </resources>

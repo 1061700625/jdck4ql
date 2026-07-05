@@ -342,8 +342,7 @@ public class HttpUtil {
      * @author XanderYe
      * @date 2020/2/4
      */
-    public static ResEntity doPost(String url, Map<String, Object> headers, Map<String, Object> cookies, Map<String, Object> params) throws IOException {
-        HttpPost httpPost = new HttpPost(baseUrl + url);
+    public static ResEntity doPost(String url, Map<String, Object> headers, Map<String, Object> cookies, Map<String, Object> params) throws IOException {        HttpPost httpPost = new HttpPost(baseUrl + url);
         // 拼接参数
         if (params != null && !params.isEmpty()) {
             List<NameValuePair> pairs = new ArrayList<>(params.size());
@@ -363,6 +362,29 @@ public class HttpUtil {
         addHeaders(httpPost, headers);
         // 添加cookies
         addCookies(httpPost, cookies);
+        HttpClientContext httpClientContext = new HttpClientContext();
+        CloseableHttpClient httpClient = getHttpClient();
+        try (CloseableHttpResponse response = httpClient.execute(httpPost, httpClientContext)) {
+            return getResEntity(response, false);
+        } finally {
+            if (!connectionPool.get()) {
+                httpClient.close();
+            }
+        }
+    }
+
+    /**
+     * post 原始 body 请求：直接发送已编码的 application/x-www-form-urlencoded 字符串，
+     * 避免 UrlEncodedFormEntity 对 body 参数值再次做 URL 编码。
+     */
+    public static ResEntity doPostRaw(String url, Map<String, Object> headers, String rawBody) throws IOException {
+        HttpPost httpPost = new HttpPost(baseUrl + url);
+        if (rawBody != null && !rawBody.isEmpty()) {
+            StringEntity entity = new StringEntity(rawBody, CHARSET);
+            entity.setContentType("application/x-www-form-urlencoded");
+            httpPost.setEntity(entity);
+        }
+        addHeaders(httpPost, headers);
         HttpClientContext httpClientContext = new HttpClientContext();
         CloseableHttpClient httpClient = getHttpClient();
         try (CloseableHttpResponse response = httpClient.execute(httpPost, httpClientContext)) {
