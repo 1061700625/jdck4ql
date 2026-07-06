@@ -47,6 +47,8 @@ public class MainActivity extends AppCompatActivity {
 
     private Spinner phoneSpinner;
 
+    private TextView qlStatusText;
+
     private WebView webView;
 
     private static final String JD_URL = "https://home.m.jd.com/myJd/home.action";
@@ -61,6 +63,8 @@ public class MainActivity extends AppCompatActivity {
 
     private Boolean smsEnabled;
     private SMSReceiver smsReceiver;
+
+    private boolean firstResume = true;
 
 
     @Override
@@ -108,6 +112,8 @@ public class MainActivity extends AppCompatActivity {
         });
         // 配置账号下拉框
         phoneSpinner = findViewById(R.id.phoneSpinner);
+        qlStatusText = findViewById(R.id.qlStatusText);
+        updateQlStatus(getString(R.string.ql_status_not_login), false);
         String phoneStr = config.getString("phoneStr", null);
         if (phoneStr != null) {
             String[] phones = phoneStr.split("\r\n");
@@ -137,10 +143,10 @@ public class MainActivity extends AppCompatActivity {
                     return;
                 }
                 String account = StringUtils.isBlank(password) ? phone : phone + " " + password;
+                boolean updated = upsertAccount(account);
                 dialog.cancel();
-                phoneSet.add(account);
                 updatePhone();
-                Toast.makeText(this, "添加成功", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, updated ? "账号已更新" : "添加成功", Toast.LENGTH_SHORT).show();
             });
         });
         // 删除按钮
@@ -326,6 +332,16 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        if (firstResume) {
+            firstResume = false;
+            return;
+        }
+        checkQlLogin();
+    }
+
+    @Override
     protected void onDestroy() {
         unregisterSMSReceiver();
         super.onDestroy();
@@ -503,6 +519,40 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private boolean upsertAccount(String account) {
+        String accountName = getAccountName(account);
+        boolean updated = false;
+        LinkedHashSet<String> newPhoneSet = new LinkedHashSet<>();
+        for (String savedAccount : phoneSet) {
+            if (accountName.equals(getAccountName(savedAccount))) {
+                newPhoneSet.add(account);
+                updated = true;
+            } else {
+                newPhoneSet.add(savedAccount);
+            }
+        }
+        if (!updated) {
+            newPhoneSet.add(account);
+        }
+        phoneSet = newPhoneSet;
+        return updated;
+    }
+
+    private void updateQlStatus(String text, boolean connected) {
+        if (qlStatusText == null) {
+            return;
+        }
+        qlStatusText.setText(text);
+        qlStatusText.setTextColor(Color.parseColor(connected ? "#2E7D32" : "#616161"));
+    }
+
+    private String getQlStatusText(String prefix, QlInfo qlInfo) {
+        if (qlInfo == null || StringUtils.isBlank(qlInfo.getAddress())) {
+            return prefix;
+        }
+        return prefix + " · " + qlInfo.getAddress();
+    }
+
     private String getAccountName(String account) {
         if (account == null) {
             return "";
@@ -534,9 +584,11 @@ public class MainActivity extends AppCompatActivity {
     private void checkQlLogin() {
         String qlJSON = config.getString("qlJSON", null);
         if (qlJSON == null) {
+            updateQlStatus(getString(R.string.ql_status_not_login), false);
             return;
         }
         QlInfo qlInfo = JSON.parseObject(qlJSON, QlInfo.class);
+        updateQlStatus(getQlStatusText(getString(R.string.ql_status_checking), qlInfo), false);
         ExecutorService singleThreadExecutor = Executors.newSingleThreadExecutor();
         singleThreadExecutor.execute(() -> {
             Looper.prepare();
@@ -546,8 +598,10 @@ public class MainActivity extends AppCompatActivity {
                 List<QlEnv> qlEnvList = QinglongUtil.getEnvList(qlInfo,"");
                 Config.getInstance().setQlEnvList(qlEnvList);
                 Config.getInstance().setQlInfo(qlInfo);
+                runOnUiThread(() -> updateQlStatus(getQlStatusText(getString(R.string.ql_status_connected), qlInfo), true));
                 Toast.makeText(this, "青龙token有效", Toast.LENGTH_SHORT).show();
             } catch (IOException e) {
+                runOnUiThread(() -> updateQlStatus(getQlStatusText(getString(R.string.ql_status_expired), qlInfo), false));
                 Toast.makeText(this, "青龙token已失效，请重新登录", Toast.LENGTH_SHORT).show();
             }
             Looper.loop();

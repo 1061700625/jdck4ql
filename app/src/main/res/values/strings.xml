@@ -17,4 +17,8 @@
     <string name="ql_token_text">token：</string>
     <string name="ql_login_btn_text">登录</string>
     <string name="ql_cancel_btn_text">取消</string>
+    <string name="ql_status_not_login">青龙：未登录</string>
+    <string name="ql_status_checking">青龙：检测中…</string>
+    <string name="ql_status_connected">青龙：已连接</string>
+    <string name="ql_status_expired">青龙：token已失效</string>
 </resources>
